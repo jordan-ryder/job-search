@@ -1,0 +1,7 @@
+anthropic
+beautifulsoup4
+ipykernel
+polars
+pydantic
+requests
+-e ../myutils

@@ -41,6 +41,23 @@ from typing import Literal
 import anthropic
 from pydantic import BaseModel
 
+import db
+
+# Strip a single trailing legal/marketing suffix so "Acme, Inc." == "Acme".
+# Mirrors populate_companies.normalize_name.
+_SUFFIX_RE = re.compile(
+    r"[\s,]+(?:inc\.?|llc|ltd\.?|gmbh|co\.?|corp\.?|corporation|company|technologies|labs)\.?$",
+    re.I,
+)
+
+
+def normalize_name(name: str | None) -> str:
+    if not name:
+        return ""
+    s = name.strip().lower()
+    s = _SUFFIX_RE.sub("", s).strip()
+    return re.sub(r"\s+", " ", s)
+
 BASE = Path(__file__).parent
 DB_PATH = BASE / "jobs.db"
 
@@ -141,38 +158,8 @@ class SizeGuess(BaseModel):
 
 
 def ensure_columns(conn: sqlite3.Connection) -> None:
-    cols = {r[1]: r[2] for r in conn.execute("PRAGMA table_info(jobs)")}
-
-    # Migrate stale TEXT company_size from a prior version of this script.
-    if cols.get("company_size") == "TEXT":
-        non_null = conn.execute(
-            "SELECT COUNT(*) FROM jobs WHERE company_size IS NOT NULL"
-        ).fetchone()[0]
-        if non_null:
-            sys.exit(
-                "company_size exists as TEXT and has data; "
-                "refusing to migrate to INTEGER automatically"
-            )
-        conn.execute("ALTER TABLE jobs DROP COLUMN company_size")
-        cols.pop("company_size")
-        print("migrated company_size: TEXT -> INTEGER (was empty)")
-
-    added = []
-    if "company_size" not in cols:
-        conn.execute("ALTER TABLE jobs ADD COLUMN company_size INTEGER")
-        added.append("company_size")
-    if "company_size_source" not in cols:
-        conn.execute("ALTER TABLE jobs ADD COLUMN company_size_source TEXT")
-        added.append("company_size_source")
-    if "regex_checked" not in cols:
-        conn.execute("ALTER TABLE jobs ADD COLUMN regex_checked INTEGER DEFAULT 0")
-        added.append("regex_checked")
-    if "fetch_checked" not in cols:
-        conn.execute("ALTER TABLE jobs ADD COLUMN fetch_checked INTEGER DEFAULT 0")
-        added.append("fetch_checked")
-    if added:
-        conn.commit()
-        print(f"added columns: {', '.join(added)}")
+    """Reconcile the live DB to schema.sql via db.apply_migrations."""
+    db.apply_migrations(conn, verbose=True)
 
 
 def run_regex_pass(conn: sqlite3.Connection, dry_run: bool) -> None:
@@ -208,6 +195,71 @@ def run_regex_pass(conn: sqlite3.Connection, dry_run: bool) -> None:
     conn.commit()
 
 
+def run_lookup_pass(conn: sqlite3.Connection, dry_run: bool) -> None:
+    """Use companies (source of truth) to short-circuit work on unsized jobs:
+      - if the company has a known size, copy it onto the job
+      - if Haiku has already been tried for this company, mark the job
+        fetch_checked=1 so the LLM pass skips it (even if size is still null)"""
+    rows = conn.execute(
+        """
+        SELECT id, company FROM jobs
+        WHERE company_size IS NULL
+          AND lookup_checked = 0
+          AND fetch_checked = 0
+          AND company IS NOT NULL AND TRIM(company) != ''
+        """
+    ).fetchall()
+
+    if not rows:
+        print("lookup pass: nothing to check")
+        return
+
+    # Map normalized name -> (size, size_source, fetch_checked) from companies.
+    lookup: dict[str, tuple[int | None, str | None, int]] = {}
+    for r in conn.execute(
+        "SELECT name, size, size_source, fetch_checked FROM companies"
+    ):
+        norm = normalize_name(r["name"])
+        if norm:
+            lookup[norm] = (r["size"], r["size_source"], r["fetch_checked"] or 0)
+
+    size_updates: list[tuple[int, str, int]] = []        # (size, source, id)
+    fetch_skip_ids: list[int] = []                       # rows whose company is "Haiku tried, gave up"
+    for r in rows:
+        norm = normalize_name(r["company"])
+        if norm not in lookup:
+            continue
+        size, src, fc = lookup[norm]
+        if size is not None:
+            size_updates.append((size, src, r["id"]))
+        elif fc:
+            fetch_skip_ids.append(r["id"])
+
+    print(
+        f"lookup pass: {len(size_updates)}/{len(rows)} sized from companies, "
+        f"{len(fetch_skip_ids)} marked fetch_checked (already tried, no signal)"
+    )
+
+    if dry_run:
+        return
+
+    if size_updates:
+        conn.executemany(
+            "UPDATE jobs SET company_size=?, company_size_source=? WHERE id=?",
+            size_updates,
+        )
+    if fetch_skip_ids:
+        conn.executemany(
+            "UPDATE jobs SET fetch_checked=1 WHERE id=?",
+            [(i,) for i in fetch_skip_ids],
+        )
+    conn.executemany(
+        "UPDATE jobs SET lookup_checked=1 WHERE id=?",
+        [(r["id"],) for r in rows],
+    )
+    conn.commit()
+
+
 def format_job_for_llm(row: sqlite3.Row) -> str:
     parts = []
     if row["company"]:
@@ -229,7 +281,7 @@ def run_llm_pass(
     if min_score is not None:
         where.append(f"score >= {int(min_score)}")
     query = (
-        "SELECT id, company, title, raw_text FROM jobs "
+        "SELECT id, source, company, title, raw_text FROM jobs "
         f"WHERE {' AND '.join(where)} "
         f"ORDER BY {order_clause}"
     )
@@ -304,6 +356,27 @@ def run_llm_pass(
                 "WHERE id=?",
                 (parsed.company_size, parsed.source, row["id"]),
             )
+            # Always record the Haiku attempt on companies — even on null size —
+            # so the next lookup pass can skip Haiku for this company entirely.
+            # ON CONFLICT updates only the fetch flags; populate owns the size.
+            if row["company"]:
+                conn.execute(
+                    """
+                    INSERT INTO companies
+                      (name, source, size, size_source, regex_checked, fetch_checked,
+                       last_fetch_checked, job_count, first_seen)
+                    VALUES (?, ?, ?, ?, 0, 1, datetime('now'), 1, datetime('now'))
+                    ON CONFLICT(name, source) DO UPDATE SET
+                      fetch_checked = 1,
+                      last_fetch_checked = excluded.last_fetch_checked
+                    """,
+                    (
+                        row["company"].strip(),
+                        row["source"],
+                        parsed.company_size,
+                        parsed.source,
+                    ),
+                )
             conn.commit()
         sized += 1
 
@@ -391,6 +464,7 @@ def main() -> None:
 
     ensure_columns(conn)
     run_regex_pass(conn, args.dry_run)
+    run_lookup_pass(conn, args.dry_run)
 
     if not args.skip_llm:
         run_llm_pass(conn, args.dry_run, order_clause, args.limit, args.min_score)

@@ -23,12 +23,17 @@ from pathlib import Path
 import anthropic
 from pydantic import BaseModel, Field
 
+from prefilters import prefilter_job, load_company_blocklist
+
 BASE = Path(__file__).parent
 DB_PATH = BASE / "jobs.db"
 CONTEXT_PATH = BASE / "context.md"
 RUBRIC_PATH = BASE / "scoring_rubric.md"
 
 MODEL = "claude-haiku-4-5"
+
+
+# Pre-Haiku filter rules live in prefilters.py. Edit there to tune.
 
 SYSTEM_INSTRUCTIONS = """\
 You score job postings for Jordan's job search.
@@ -121,6 +126,11 @@ def main():
         query += f" LIMIT {int(args.limit)}"
     rows = conn.execute(query).fetchall()
 
+    # Pre-load the company blocklist once so per-row prefilter calls are O(1).
+    blocklist = load_company_blocklist(conn)
+    if blocklist:
+        print(f"company blocklist: {len(blocklist)} companies flagged in companies.skip_reason")
+
     total = len(rows)
     if total == 0:
         print("nothing to score (reviewed=0 count is 0)")
@@ -137,9 +147,30 @@ def main():
     input_total = 0
     output_total = 0
     scored = 0
+    prefiltered = 0
     errored = 0
 
     for i, row in enumerate(rows, 1):
+        # Pre-filter before spending a Haiku call. Order: company blocklist
+        # → title rules → description rules. All rules live in prefilters.py
+        # — `python prefilters.py audit` reports current coverage.
+        reason = prefilter_job(
+            row["title"], row["raw_text"],
+            company=row["company"], blocklist=blocklist,
+        )
+        if reason is not None:
+            note = f"Skip. Pre-filtered ({reason})."
+            if not args.dry_run:
+                conn.execute(
+                    "UPDATE jobs SET reviewed=1, score=0, interested=0, notes=? WHERE id=?",
+                    (note, row["id"]),
+                )
+                conn.commit()
+            prefiltered += 1
+            if i == 1 or i % 50 == 0 or i == total:
+                print(f"  [{i}/{total}] prefiltered={prefiltered} scored={scored} errored={errored}")
+            continue
+
         try:
             resp = client.messages.parse(
                 model=MODEL,
@@ -167,10 +198,11 @@ def main():
         output_total += u.output_tokens
 
         tag = "INT" if parsed.interested else "   "
-        note_preview = parsed.notes.replace("\n", " ")[:90]
+        title_preview = (row["title"] or "?").replace("\n", " ").strip()[:55]
+        note_preview = parsed.notes.replace("\n", " ")[:80]
         print(
             f"  [{i}/{total}] id={row['id']:<5} score={parsed.score:>2} {tag} "
-            f"cache_r={cr:>5} | {note_preview}"
+            f"cache_r={cr:>5} | {title_preview:<55} | {note_preview}"
         )
 
         if not args.dry_run:
@@ -193,7 +225,7 @@ def main():
     ) / 1_000_000
 
     print()
-    print(f"done: {scored} scored, {errored} errored")
+    print(f"done: {scored} scored, {prefiltered} prefiltered (skipped Haiku), {errored} errored")
     print(
         f"tokens: input={input_total:,} "
         f"cache_read={cache_read_total:,} "

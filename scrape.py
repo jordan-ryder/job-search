@@ -35,6 +35,8 @@ from urllib.parse import urljoin
 import requests
 from bs4 import BeautifulSoup
 
+import db
+
 DB_PATH = Path(__file__).parent / "jobs.db"
 
 HN_ALGOLIA_SEARCH = "https://hn.algolia.com/api/v1/search_by_date"
@@ -71,51 +73,11 @@ def db_connect():
 
 
 def init_db():
+    """Apply schema.sql to bring jobs.db into the declared state."""
     conn = db_connect()
-    conn.executescript(
-        """
-        CREATE TABLE IF NOT EXISTS companies (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            source TEXT NOT NULL,
-            url TEXT,
-            tags TEXT,
-            notes TEXT,
-            first_seen TEXT NOT NULL,
-            UNIQUE(name, source)
-        );
-
-        CREATE TABLE IF NOT EXISTS jobs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            source TEXT NOT NULL,
-            source_id TEXT NOT NULL,
-            company TEXT,
-            title TEXT,
-            location TEXT,
-            remote INTEGER DEFAULT 0,
-            url TEXT,
-            posted_at TEXT,
-            raw_text TEXT,
-            matched_keywords TEXT,
-            fetched_at TEXT NOT NULL,
-            UNIQUE(source, source_id)
-        );
-
-        CREATE TABLE IF NOT EXISTS seen_threads (
-            hn_story_id INTEGER PRIMARY KEY,
-            title TEXT,
-            fetched_at TEXT NOT NULL
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_jobs_source ON jobs(source);
-        CREATE INDEX IF NOT EXISTS idx_jobs_company ON jobs(company);
-        CREATE INDEX IF NOT EXISTS idx_jobs_remote ON jobs(remote);
-        CREATE INDEX IF NOT EXISTS idx_jobs_posted_at ON jobs(posted_at);
-        """
-    )
-    conn.commit()
+    n = db.apply_migrations(conn, verbose=True)
     conn.close()
-    print(f"initialized db at {DB_PATH}")
+    print(f"db at {DB_PATH}: applied {n} statements.")
 
 
 def now_iso():

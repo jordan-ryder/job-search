@@ -31,9 +31,9 @@ Lean toward scoring rather than disqualifying when uncertain. The 5-7 band is wh
 
 - **Remote** (US or US-friendly distributed). Single biggest unlock per the geography note.
 - **Data team reports to business, not IT.** Look for CDO, Chief Data Officer, "Data org", "Analytics org", VP of Data. Bonus if data is its own function alongside Engineering and Product.
-- **Modern stack signals.** Two or more of: dbt, Airflow, Dagster, Prefect, Snowflake, Databricks, BigQuery, Redshift, Kafka, Kinesis, Spark, Flink, Iceberg, Delta Lake, Trino, Materialize.
+- **Modern stack signals.** Two or more of: dbt, Snowflake, Databricks, Redshift, Spark, Iceberg, Delta Lake, python, postgresql, datalake.
 - **Senior IC title.** "Senior", "Staff", "Principal", "Lead Data Engineer". Indicates the level matches Jordan's experience and won't price-anchor low.
-
+- **Owning the product. High level of impact on decisions. Wide scope of work. Being able to solve problems**
 ### Medium positives (+1 each)
 
 - **Comp visible and at or above $140K base.** Or equity-heavy with a credible base.
@@ -41,7 +41,7 @@ Lean toward scoring rather than disqualifying when uncertain. The 5-7 band is wh
 - **Engineering blog, talks, or open-source presence.** Sign of a culture that thinks in public.
 - **Production ML or ML platform work mentioned.** Jordan has done this and it's a differentiator.
 - **Direct stakeholder language.** "Partner with product / sales / ops / finance teams", "embedded in business unit", "work directly with customers". Not "support internal IT requests".
-- **Logistics, supply chain, transportation, fleet, manufacturing.** Domain match from Roehl and prior experience. Reduces ramp time, gives interview talking points.
+- **Positive mission**
 - **Stated career path / tech lead track.** "Path to staff", "tech lead opportunities", "growth into management if interested".
 
 ### Mild positives (+0.5 each)
@@ -55,12 +55,12 @@ Lean toward scoring rather than disqualifying when uncertain. The 5-7 band is wh
 
 ### Strong negatives (-2 each)
 
-- **Buried under IT.** Title is "BI Developer", "ETL Developer", "Database Developer", or JD describes the team as part of IT/Infrastructure with no business-facing scope. This is the structural pattern Jordan is leaving.
 - **Time-tracking, butts-in-seats, or surveillance signals.** "Daily standup attendance required", "core hours 9-5 in office", "track time in [tool]".
 - **Defense, weapons, surveillance contractors, gambling, MLM, crypto-only.** (Adjust if Jordan flags any of these as fine.)
 
 ### Medium negatives (-1 each)
 
+- **Buried under IT.** Title is "BI Developer", "ETL Developer", "Database Developer", or JD describes the team as part of IT/Infrastructure with no business-facing scope. This is the structural pattern Jordan is leaving.
 - **Hard "X years leading" requirement** stated as a must-have. Not a disqualifier per Jordan's "apply at 60-70% match" rule, but a signal the role may not stretch the right way.
 - **Buzzword-heavy JD with no specifics.** "Rockstar", "ninja", "wear many hats", "fast-paced", "work hard play hard" with no actual scope description.
 - **On-call rotation mentioned without compensation language.** Fine for senior IC if comped; problematic if expected as part of base.
