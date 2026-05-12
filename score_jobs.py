@@ -27,8 +27,8 @@ from prefilters import prefilter_job, load_company_blocklist
 
 BASE = Path(__file__).parent
 DB_PATH = BASE / "jobs.db"
-CONTEXT_PATH = BASE / "context.md"
-RUBRIC_PATH = BASE / "scoring_rubric.md"
+CONTEXT_PATH = BASE / "prompts" / "context.md"
+RUBRIC_PATH = BASE / "prompts" / "scoring_rubric.md"
 
 MODEL = "claude-haiku-4-5"
 

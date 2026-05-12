@@ -30,23 +30,36 @@ Runs the full pipeline: scrape HN → import additional URLs → import Apify ex
 
 ## Layout
 
-| File | Purpose |
-|---|---|
-| `schema.sql` | Source of truth for the DB schema. Edit this; `db.py migrate` reconciles. |
-| `db.py` | Schema diff/apply tool. `python db.py status` to preview, `migrate` to apply. |
-| `scrape.py` | HN "Who is Hiring" scraper. |
-| `scrape_ats.py` | Direct ATS scrapers (Greenhouse, Lever, Ashby, Workable, Breezy). |
-| `score_jobs.py` | Per-row scoring via Haiku. Reads `context.md` + `scoring_rubric.md` as cached system prompt. |
-| `size_companies.py` | Headcount estimator: regex pass → lookup pass → Haiku pass. |
-| `populate_companies.py` | Aggregates `jobs` into per-company rows. Auto-flags defense contractors. |
-| `prefilters.py` | Regex/blocklist filters that skip Haiku for obvious junk. `python prefilters.py audit` shows coverage. |
-| `import_apify.py` | Imports JSON exports dropped into `scrapes/`. Moves processed files to `scrapes/imported/`. |
-| `import_additional.py` | Reads `additional_posts.txt` of one-off URLs, queues their companies' ATS portfolios. |
-| `search.ipynb` | Query/browse the scored DB with polars. |
+```
+README.md, requirements.txt, .env, .gitignore   ← project metadata + secrets
+bootstrap.sh, refresh.sh                        ← entry points
+schema.sql                                      ← declarative DB schema
+jobs.db                                         ← SQLite data store
+search.ipynb                                    ← polars notebook for browsing results
+
+db.py                                           ← schema diff/apply tool
+scrape.py                                       ← HN "Who is Hiring" scraper
+scrape_ats.py                                   ← Greenhouse/Lever/Ashby/Workable/Breezy scrapers
+score_jobs.py                                   ← per-row Haiku scoring
+size_companies.py                               ← headcount: regex → lookup → Haiku passes
+populate_companies.py                           ← rolls jobs into per-company rows
+prefilters.py                                   ← pre-Haiku regex/blocklist filters
+import_apify.py                                 ← ingest Apify JSON exports
+import_additional.py                            ← ingest one-off URLs
+
+prompts/
+  context.md                                    ← personal context for the LLM
+  scoring_rubric.md                             ← scoring criteria
+
+scrapes/
+  additional_posts.txt                          ← one-off URLs to import
+  *.json                                        ← Apify exports waiting to be ingested
+  imported/                                     ← archived after ingestion
+```
 
 ## Tuning
 
-- Scoring criteria: `scoring_rubric.md`
-- Personal context the LLM uses: `context.md`
+- Scoring criteria: `prompts/scoring_rubric.md`
+- Personal context the LLM uses: `prompts/context.md`
 - Pre-Haiku junk filters: `prefilters.py` (run `python prefilters.py audit` to see what's caught)
 - Manually block a company from ever being scored: `UPDATE companies SET skip_reason = 'manual: <reason>' WHERE name = '...';`

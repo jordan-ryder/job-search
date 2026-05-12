@@ -13,7 +13,7 @@ in SUPPORTED_PATTERNS below.
 
 Usage:
     python import_additional.py
-    python import_additional.py --file additional_posts.txt
+    python import_additional.py --file scrapes/additional_posts.txt
     python import_additional.py --dry-run
 """
 
@@ -30,7 +30,7 @@ import db
 
 BASE = Path(__file__).parent
 DB_PATH = BASE / "jobs.db"
-DEFAULT_FILE = BASE / "additional_posts.txt"
+DEFAULT_FILE = BASE / "scrapes" / "additional_posts.txt"
 
 
 # Ordered: matched providers we can scrape full portfolios for.
